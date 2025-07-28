@@ -7,11 +7,6 @@ type ScopeStorage = {
   finalizers: Set<FinalizerFunction>
 }
 
-const storageDefaultValue: ScopeStorage = {
-  resources: new Map(),
-  finalizers: new Set(),
-}
-
 const storage = new AsyncLocalStorage<ScopeStorage>({
   name: "RuntimeStorage",
 })
@@ -22,7 +17,9 @@ function getStoreOrThrow() {
   return value
 }
 
-type Implementation<T> = () => T
+type Builder<T> = () => T | Promise<T>
+
+type BuilderFinalizer<T> = (implementation: T) => void | Promise<void>
 
 export class Finalizer {
   constructor(finalizer: FinalizerFunction) {
@@ -32,18 +29,18 @@ export class Finalizer {
 }
 
 export class Resource<T> {
-  public Default: Implementation<T>
+  public Default: Builder<T>
 
-  constructor(name: string, fallback?: T)
+  constructor(name: string, fallback?: Builder<T>)
   constructor(
     name: string,
-    fallback: T,
-    finalizer?: (implementation: T) => void | Promise<void>
+    fallback: Builder<T>,
+    finalizer?: BuilderFinalizer<T>
   )
   constructor(
     public name: string,
-    private fallback?: T,
-    private finalizer?: (implementation: T) => void | Promise<void>
+    private fallback?: Builder<T>,
+    private finalizer?: BuilderFinalizer<T>
   ) {
     if (fallback !== undefined) {
       this.Default = this.make(fallback, finalizer)
@@ -51,14 +48,16 @@ export class Resource<T> {
   }
 
   public make(
-    implementation: T,
-    finalizer?: (implementation: T) => void | Promise<void>
-  ): Implementation<T> {
-    return () => {
+    builder: Builder<T>,
+    finalizer?: BuilderFinalizer<T>
+  ): Builder<T> {
+    return async () => {
       const store = getStoreOrThrow()
+      const implementation = await builder()
       store.resources.set(this.name, implementation)
       if (finalizer) {
         new Finalizer(() => {
+          store.resources.get(this.name)
           finalizer(implementation)
         })
       }
@@ -84,7 +83,7 @@ export class Resource<T> {
 export function Layer<T>() {}
 
 export function Scope<Result, Params extends unknown[]>(
-  dependencies: Implementation<unknown>[],
+  dependencies: Builder<unknown>[],
   callback: (...args: Params) => Promise<Result>
 ) {
   const current = storage.getStore()

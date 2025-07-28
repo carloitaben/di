@@ -3,8 +3,8 @@ import * as Scope from "."
 
 test("Dependency injection", async () => {
   const Resource = new Scope.Resource<string>("resource")
-  const mock = Resource.make("mock")
-  const live = Resource.make("live")
+  const mock = Resource.make(() => "mock")
+  const live = Resource.make(() => "live")
 
   const program = vi.fn(async () => Resource)
   const programWithMockDependency = Scope.Scope([mock], program)
@@ -16,7 +16,7 @@ test("Dependency injection", async () => {
 })
 
 test("Default", async () => {
-  const Resource = new Scope.Resource("resource", "default")
+  const Resource = new Scope.Resource("resource", () => "default")
   const result = await Scope.Scope([Resource.Default], async () => Resource)()
   expect(result).toBe("default")
 })
@@ -26,7 +26,11 @@ test("Finalizer", async () => {
     console.log("Running finalizer")
   })
 
-  const Resource = new Scope.Resource<string>("resource", "default", finalizer)
+  const Resource = new Scope.Resource<string>(
+    "resource",
+    () => "default",
+    finalizer
+  )
 
   const program = Scope.Scope([Resource.Default], async (boom: boolean) => {
     if (boom) {
@@ -42,19 +46,18 @@ test("Finalizer", async () => {
   expect(finalizer).toHaveBeenCalledOnce()
 })
 
-test.skip("Resources from other resources", async () => {
+test("Resources from other resources", async () => {
   const finalizer = vi.fn(() => {
     console.log("Running finalizer")
   })
 
-  const Database = new Scope.Resource<string>("database", "default")
+  const Database = new Scope.Resource("database", () => "default")
 
   const Drizzle = new Scope.Resource(
     "drizzle",
     async () => {
       const database = await Database
-      console.log("building orm with database", database)
-      return `${database}orm`
+      return [database, "orm"]
     },
     finalizer
   )
@@ -65,5 +68,5 @@ test.skip("Resources from other resources", async () => {
   })
 
   const result = await program()
-  expect(result).toBe("databaseorm")
+  expect(result).toEqual(["default", "orm"])
 })
