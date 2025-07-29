@@ -85,3 +85,18 @@ test("Nested derived dependencies", async () => {
   const result = await runtime.run(async () => Qux)
   expect(result).toEqual("qux")
 })
+
+test("Inline dependencies", async () => {
+  const Foo = new Dependency("Foo", () => "foo")
+  const Bar = new Dependency(
+    "Bar",
+    new Runtime(Foo.Default).bind(async () => {
+      const foo = await Foo
+      return foo + "bar"
+    }),
+  )
+
+  const runtime = new Runtime(Bar.Default)
+  const result = await runtime.run(async () => Bar)
+  expect(result).toBe("foobar")
+})

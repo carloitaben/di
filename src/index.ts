@@ -158,4 +158,8 @@ export class Runtime {
       }
     })
   }
+
+  public bind = <Result>(program: () => Promise<Result>) => {
+    return () => this.run(program)
+  }
 }

@@ -156,7 +156,7 @@ export const Database = new Dependency<Client>("Database")
 export const DatabaseTest = Database.make(() =>
   createClient({
     url: "file:sqlite.db",
-  })
+  }),
 )
 
 // External database
@@ -164,7 +164,7 @@ export const DatabaseLive = Database.make(() =>
   createClient({
     url: process.env.DATABASE_URL,
     authToken: process.env.DATABASE_AUTH_TOKEN,
-  })
+  }),
 )
 
 // Uses the provided Database to build the ORM
@@ -193,7 +193,7 @@ export const DatabaseTest = Database.make(
   (client) => {
     client.close()
     console.log("SQLite client closed")
-  }
+  },
 )
 
 // ...
@@ -218,7 +218,7 @@ export const Database = new Dependency(
     createClient({
       url: "file:sqlite.db",
     }),
-  (client) => client.close()
+  (client) => client.close(),
 )
 ```
 
