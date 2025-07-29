@@ -1,72 +1,70 @@
 import { expect, test, vi } from "vitest"
-import * as Scope from "."
+import { Dependency, Runtime, addFinalizer } from "./index"
 
 test("Dependency injection", async () => {
-  const Resource = new Scope.Resource<string>("resource")
-  const mock = Resource.make(() => "mock")
-  const live = Resource.make(() => "live")
+  const Resource = new Dependency<string>("Resource")
+  const ResourceMock = Resource.make(() => "mock")
+  const ResourceLive = Resource.make(() => "live")
 
   const program = vi.fn(async () => Resource)
-  const programWithMockDependency = Scope.Scope([mock], program)
-  const programWithLiveDependency = Scope.Scope([live], program)
-  const mockResult = await programWithMockDependency()
-  const liveResult = await programWithLiveDependency()
-  expect(mockResult).toBe("mock")
-  expect(liveResult).toBe("live")
+
+  const runtimeMock = new Runtime(ResourceMock)
+  const runtimeLive = new Runtime(ResourceLive)
+
+  const mock = await runtimeMock.run(program)
+  const live = await runtimeLive.run(program)
+
+  expect(mock).toBe("mock")
+  expect(live).toBe("live")
 })
 
-test("Default", async () => {
-  const Resource = new Scope.Resource("resource", () => "default")
-  const result = await Scope.Scope([Resource.Default], async () => Resource)()
+test("Default value", async () => {
+  const Resource = new Dependency("Resource", () => "default")
+  const runtime = new Runtime(Resource.Default)
+  const result = await runtime.run(async () => Resource)
   expect(result).toBe("default")
 })
 
-test("Finalizer", async () => {
-  const finalizer = vi.fn(() => {
-    console.log("Running finalizer")
-  })
+test("Finalizers", async () => {
+  const finalizer = vi.fn()
 
-  const Resource = new Scope.Resource<string>(
-    "resource",
-    () => "default",
-    finalizer
-  )
-
-  const program = Scope.Scope([Resource.Default], async (boom: boolean) => {
-    if (boom) {
-      throw Error("liada")
-    }
-
-    const resource = await Resource
-    console.log("got resource", resource)
-    return resource
-  })
-
-  await expect(() => program(true)).rejects.toThrowError()
-  expect(finalizer).toHaveBeenCalledOnce()
-})
-
-test("Resources from other resources", async () => {
-  const finalizer = vi.fn(() => {
-    console.log("Running finalizer")
-  })
-
-  const Database = new Scope.Resource("database", () => "default")
-
-  const Drizzle = new Scope.Resource(
-    "drizzle",
-    async () => {
-      const database = await Database
-      return [database, "orm"]
+  const Resource = new Dependency(
+    "Resource",
+    () => {
+      addFinalizer(finalizer)
+      return "default"
     },
     finalizer
   )
 
-  const program = Scope.Scope([Database.Default, Drizzle.Default], async () => {
-    const drizzle = await Drizzle
-    return drizzle
+  const program = async (boom: boolean) => {
+    if (boom) {
+      throw Error("liada")
+    }
+
+    return Resource
+  }
+
+  const runtime = new Runtime(Resource.Default)
+
+  await expect(() => runtime.run(() => program(true))).rejects.toThrowError()
+  expect(finalizer).toHaveReturnedTimes(2)
+})
+
+test("Derived dependencies", async () => {
+  const Database = new Dependency("Database", () => "default")
+
+  const Drizzle = new Dependency("Drizzle", async () => {
+    const database = await Database
+    return [database, "orm"]
   })
 
-  const result = await program()
+  const program = async () => {
+    const drizzle = await Drizzle
+    return drizzle
+  }
+
+  const runtime = new Runtime(Database.Default, Drizzle.Default)
+  const result = await runtime.run(program)
   expect(result).toEqual(["default", "orm"])
 })
