@@ -11,15 +11,32 @@ const storage = new AsyncLocalStorage<RuntimeStorage>({
   name: "RuntimeStorage",
 })
 
+export class RuntimeError extends Error {
+  constructor() {
+    super()
+    this.name = "RuntimeError"
+    this.message =
+      "Tried to load a dependency implementation outside a Runtime instance."
+  }
+}
+
 function getStoreOrThrow() {
   const value = storage.getStore()
-  if (!value) throw Error("TODO: outside context")
+  if (!value) throw new RuntimeError()
   return value
 }
 
 type DependencyBuilder<T> = () => T | Promise<T>
 
 type BuilderFinalizer<T> = (implementation: T) => void | Promise<void>
+
+export class MissingImplementationError extends Error {
+  constructor(public dependency: string) {
+    super()
+    this.name = "MissingImplementationError"
+    this.message = `Missing implementation for dependency ${dependency}.`
+  }
+}
 
 export function addFinalizer(finalizer: FinalizerFunction) {
   const store = getStoreOrThrow()
@@ -33,12 +50,12 @@ export class Dependency<T> {
   constructor(
     name: string,
     fallback: DependencyBuilder<T>,
-    finalizer?: BuilderFinalizer<T>
+    finalizer?: BuilderFinalizer<T>,
   )
   constructor(
     public name: string,
     fallback?: DependencyBuilder<T>,
-    finalizer?: BuilderFinalizer<T>
+    finalizer?: BuilderFinalizer<T>,
   ) {
     if (fallback !== undefined) {
       this.Default = this.make(fallback, finalizer)
@@ -47,7 +64,7 @@ export class Dependency<T> {
 
   public make(
     builder: DependencyBuilder<T>,
-    finalizer?: BuilderFinalizer<T>
+    finalizer?: BuilderFinalizer<T>,
   ): DependencyBuilder<T> {
     return async () => {
       const store = getStoreOrThrow()
@@ -67,12 +84,52 @@ export class Dependency<T> {
     const store = getStoreOrThrow()
 
     if (!store.resources.has(this.name)) {
-      throw Error(`TODO: missing implementation for ${this.name}`)
+      throw new MissingImplementationError(this.name)
     }
 
     const resource = store.resources.get(this.name) as T
     return resolve(resource)
   }
+}
+
+class RetryDependency {
+  constructor(public dependency: DependencyBuilder<unknown>) {}
+}
+
+async function resolveDependencies(dependencies: DependencyBuilder<unknown>[]) {
+  if (!dependencies.length) return
+
+  const settled = await Promise.allSettled(
+    dependencies.map(async (dependency) => {
+      try {
+        return await dependency()
+      } catch (error) {
+        if (!(error instanceof MissingImplementationError)) throw error
+        throw new RetryDependency(dependency)
+      }
+    }),
+  )
+
+  const rejected = settled.reduce<DependencyBuilder<unknown>[]>(
+    (array, result) => {
+      if (result.status === "rejected") {
+        if (!(result.reason instanceof RetryDependency)) throw result.reason
+        array.push(result.reason.dependency)
+      }
+
+      return array
+    },
+    [],
+  )
+
+  if (!rejected.length) return
+
+  if (rejected.length === dependencies.length) {
+    const first = settled.find((value) => value.status === "rejected")
+    throw first?.reason
+  }
+
+  return resolveDependencies(rejected)
 }
 
 export class Runtime {
@@ -92,11 +149,11 @@ export class Runtime {
 
     return storage.run(store, async () => {
       try {
-        await Promise.all(this.dependencies.map((dependency) => dependency()))
+        await resolveDependencies(this.dependencies)
         return storage.run(store, program)
       } finally {
         await Promise.all(
-          Array.from(store.finalizers).map(async (finalizer) => finalizer())
+          Array.from(store.finalizers).map(async (finalizer) => finalizer()),
         )
       }
     })

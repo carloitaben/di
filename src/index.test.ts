@@ -34,7 +34,7 @@ test("Finalizers", async () => {
       addFinalizer(finalizer)
       return "default"
     },
-    finalizer
+    finalizer,
   )
 
   const program = async (boom: boolean) => {
@@ -67,4 +67,21 @@ test("Derived dependencies", async () => {
   const runtime = new Runtime(Database.Default, Drizzle.Default)
   const result = await runtime.run(program)
   expect(result).toEqual(["default", "orm"])
+})
+
+test("Nested derived dependencies", async () => {
+  const Foo = new Dependency("Foo", () => "foo")
+  const Bar = new Dependency("Bar", () => Foo.then(() => "bar"))
+  const Baz = new Dependency("Baz", () => Bar.then(() => "baz"))
+  const Qux = new Dependency("Qux", () => Baz.then(() => "qux"))
+
+  const runtime = new Runtime(
+    Qux.Default,
+    Bar.Default,
+    Foo.Default,
+    Baz.Default,
+  )
+
+  const result = await runtime.run(async () => Qux)
+  expect(result).toEqual("qux")
 })
