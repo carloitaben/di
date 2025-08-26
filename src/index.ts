@@ -43,6 +43,25 @@ export function addFinalizer(finalizer: FinalizerFunction) {
   store.finalizers.add(finalizer)
 }
 
+export async function acquireRelease<T>(
+  acquire: () => Promise<T>,
+  release: (resource: T) => FinalizerFunction,
+) {
+  const resource = await acquire()
+  addFinalizer(release(resource))
+  return resource
+}
+
+export async function acquireUseRelease<T, K>(
+  acquire: () => Promise<T>,
+  use: (resource: T) => K,
+  release: (resource: T) => FinalizerFunction,
+) {
+  const resource = await acquire()
+  addFinalizer(release(resource))
+  return use(resource)
+}
+
 export class Dependency<T> {
   public Default: DependencyBuilder<T>
 

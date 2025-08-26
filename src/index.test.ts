@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest"
-import { Dependency, Runtime, addFinalizer } from "./index"
+import { Dependency, Runtime, acquireUseRelease, addFinalizer } from "./index"
 
 test("Dependency injection", async () => {
   const Resource = new Dependency<string>("Resource")
