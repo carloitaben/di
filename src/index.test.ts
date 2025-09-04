@@ -1,5 +1,12 @@
 import { expect, test, vi } from "vitest"
-import { Dependency, Runtime, acquireUseRelease, addFinalizer } from "./index"
+import {
+  Dependency,
+  MissingImplementationError,
+  Runtime,
+  acquireRelease,
+  acquireUseRelease,
+  addFinalizer,
+} from "./index"
 
 test("Dependency injection", async () => {
   const Resource = new Dependency<string>("Resource")
@@ -23,32 +30,13 @@ test("Default value", async () => {
   const runtime = new Runtime(Resource.Default)
   const result = await runtime.run(async () => Resource)
   expect(result).toBe("default")
-})
 
-test("Finalizers", async () => {
-  const finalizer = vi.fn()
-
-  const Resource = new Dependency(
-    "Resource",
-    () => {
-      addFinalizer(finalizer)
-      return "default"
-    },
-    finalizer,
-  )
-
-  const program = async (boom: boolean) => {
-    if (boom) {
-      throw Error("liada")
-    }
-
-    return Resource
-  }
-
-  const runtime = new Runtime(Resource.Default)
-
-  await expect(() => runtime.run(() => program(true))).rejects.toThrowError()
-  expect(finalizer).toHaveReturnedTimes(2)
+  const ResourceWithoutDefault = new Dependency("AnotherResource")
+  await expect(() =>
+    new Runtime(ResourceWithoutDefault.Default).run(
+      async () => ResourceWithoutDefault,
+    ),
+  ).rejects.toThrowError()
 })
 
 test("Derived dependencies", async () => {
@@ -99,4 +87,55 @@ test("Inline dependencies", async () => {
   const runtime = new Runtime(Bar.Default)
   const result = await runtime.run(async () => Bar)
   expect(result).toBe("foobar")
+})
+
+test(addFinalizer.name, async () => {
+  const finalizer = vi.fn()
+
+  const Resource = new Dependency(
+    "Resource",
+    () => {
+      addFinalizer(finalizer)
+      return "default"
+    },
+    finalizer,
+  )
+
+  const program = async (boom: boolean) => {
+    if (boom) {
+      throw Error("liada")
+    }
+
+    return Resource
+  }
+
+  const runtime = new Runtime(Resource.Default)
+
+  await expect(() => runtime.run(() => program(true))).rejects.toThrowError()
+  expect(finalizer).toHaveReturnedTimes(2)
+})
+
+test(acquireRelease.name, async () => {
+  const release = vi.fn()
+  const program = async () => acquireRelease(() => "foo", release)
+
+  const runtime = new Runtime()
+  const result = await runtime.run(program)
+  expect(result).toBe("foo")
+  expect(release).toHaveBeenCalledOnce()
+})
+
+test(acquireUseRelease.name, async () => {
+  const release = vi.fn()
+  const program = async () =>
+    acquireUseRelease(
+      () => "foo",
+      (value) => value.toUpperCase(),
+      release,
+    )
+
+  const runtime = new Runtime()
+  const result = await runtime.run(program)
+  expect(result).toBe("FOO")
+  expect(release).toHaveBeenCalledOnce()
 })

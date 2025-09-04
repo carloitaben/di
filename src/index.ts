@@ -31,10 +31,13 @@ type DependencyBuilder<T> = () => T | Promise<T>
 type BuilderFinalizer<T> = (implementation: T) => void | Promise<void>
 
 export class MissingImplementationError extends Error {
-  constructor(public dependency: string) {
+  constructor(
+    public dependency: string,
+    isDefault?: boolean,
+  ) {
     super()
     this.name = "MissingImplementationError"
-    this.message = `Missing implementation for dependency ${dependency}.`
+    this.message = `Missing ${isDefault ? "default" : ""} implementation for dependency ${dependency}.`
   }
 }
 
@@ -44,8 +47,8 @@ export function addFinalizer(finalizer: FinalizerFunction) {
 }
 
 export async function acquireRelease<T>(
-  acquire: () => Promise<T>,
-  release: (resource: T) => FinalizerFunction,
+  acquire: () => T,
+  release: (resource: Awaited<T>) => FinalizerFunction,
 ) {
   const resource = await acquire()
   addFinalizer(release(resource))
@@ -53,9 +56,9 @@ export async function acquireRelease<T>(
 }
 
 export async function acquireUseRelease<T, K>(
-  acquire: () => Promise<T>,
-  use: (resource: T) => K,
-  release: (resource: T) => FinalizerFunction,
+  acquire: () => T,
+  use: (resource: Awaited<T>) => K,
+  release: (resource: Awaited<T>) => FinalizerFunction,
 ) {
   const resource = await acquire()
   addFinalizer(release(resource))
@@ -78,6 +81,10 @@ export class Dependency<T> {
   ) {
     if (fallback !== undefined) {
       this.Default = this.make(fallback, finalizer)
+    } else {
+      this.Default = () => {
+        throw new MissingImplementationError(name, true)
+      }
     }
   }
 
