@@ -1,4 +1,4 @@
-import { Dependency } from "../../src"
+import { Dependency } from "@/index"
 
 export const Random = new Dependency("Random", () => ({
   next: () => Math.random(),

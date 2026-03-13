@@ -1,5 +1,5 @@
-import { Client, createClient } from "@libsql/client"
-import { Dependency, Runtime } from "../../src"
+import { type Client, createClient } from "@libsql/client"
+import { Dependency, Runtime } from "@/index"
 
 export const Database = new Dependency<Client>("Database")
 
@@ -12,7 +12,7 @@ export const DatabaseTest = Database.make(
   (client) => {
     client.close()
     console.log("SQLite client closed")
-  }
+  },
 )
 
 // ...

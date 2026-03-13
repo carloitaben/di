@@ -1,33 +1,32 @@
 {
-  // Visit https://aka.ms/tsconfig to read more about this file
   "compilerOptions": {
-    // Environment Settings
-    // See also https://aka.ms/tsconfig/module
-    "moduleResolution": "bundler",
-    "module": "preserve",
-    "target": "esnext",
-    "types": [],
+    // Environment setup & latest features
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "allowJs": true,
 
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
     "noEmit": true,
 
-    // Stricter Typechecking Options
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-
-    // Style Options
     "noImplicitOverride": true,
+
+    // Some stricter flags (disabled by default)
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "forceConsistentCasingInFileNames": true,
-    "noUncheckedSideEffectImports": true,
-    "allowUnreachableCode": false,
-    "allowUnusedLabels": false,
-
-    // Recommended Options
-    "strict": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "skipLibCheck": true
-  }
+    "noPropertyAccessFromIndexSignature": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+    },
+  },
 }

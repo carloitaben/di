@@ -1,5 +1,5 @@
 import { createClient } from "@libsql/client"
-import { Dependency } from "../../src"
+import { Dependency } from "@/index"
 
 export const Database = new Dependency(
   "Database",
@@ -7,5 +7,5 @@ export const Database = new Dependency(
     createClient({
       url: "file:sqlite.db",
     }),
-  (client) => client.close()
+  (client) => client.close(),
 )

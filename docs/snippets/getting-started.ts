@@ -1,4 +1,4 @@
-import { Dependency, Runtime } from "../../src"
+import { Dependency, Runtime } from "@/index"
 
 type Random = {
   readonly next: () => number
@@ -26,8 +26,8 @@ const RandomTest = Random.make(() => ({
   next: () => 0.25,
 }))
 
-const runnableTest = new Runtime(RandomTest, program)
+const runtimeTest = new Runtime(RandomTest)
 
-await runnableTest.run(program) // stdout: random number: 0.25
-await runnableTest.run(program) // stdout: random number: 0.25
-await runnableTest.run(program) // stdout: random number: 0.25
+await runtimeTest.run(program) // stdout: random number: 0.25
+await runtimeTest.run(program) // stdout: random number: 0.25
+await runtimeTest.run(program) // stdout: random number: 0.25

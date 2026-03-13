@@ -1,4 +1,4 @@
-import { expect, test, vi } from "vitest"
+import { expect, test } from "bun:test"
 import {
   Dependency,
   MissingImplementationError,
@@ -13,7 +13,7 @@ test("Dependency injection", async () => {
   const ResourceMock = Resource.make(() => "mock")
   const ResourceLive = Resource.make(() => "live")
 
-  const program = vi.fn(async () => Resource)
+  const program = async () => Resource
 
   const runtimeMock = new Runtime(ResourceMock)
   const runtimeLive = new Runtime(ResourceLive)
@@ -32,7 +32,7 @@ test("Default value", async () => {
   expect(result).toBe("default")
 
   const ResourceWithoutDefault = new Dependency("AnotherResource")
-  await expect(() =>
+  await expect(
     new Runtime(ResourceWithoutDefault.Default).run(
       async () => ResourceWithoutDefault,
     ),
@@ -89,8 +89,174 @@ test("Inline dependencies", async () => {
   expect(result).toBe("foobar")
 })
 
+test("Nested runtimes keep parent finalizers alive", async () => {
+  const calls: string[] = []
+
+  const Parent = new Dependency("Parent", () => {
+    addFinalizer(() => {
+      calls.push("parent-finalizer")
+    })
+
+    return "parent"
+  })
+
+  const Child = new Dependency("Child", () => {
+    addFinalizer(() => {
+      calls.push("child-finalizer")
+    })
+
+    return "child"
+  })
+
+  await new Runtime(Parent.Default).run(async () => {
+    expect(await Parent).toBe("parent")
+
+    await new Runtime(Child.Default).run(async () => {
+      expect(await Child).toBe("child")
+      calls.push("child-program")
+    })
+
+    expect(await Parent).toBe("parent")
+    expect(calls).toEqual(["child-program", "child-finalizer"])
+  })
+
+  expect(calls).toEqual([
+    "child-program",
+    "child-finalizer",
+    "parent-finalizer",
+  ])
+})
+
+test("Nested runtimes can override parent dependencies", async () => {
+  const Resource = new Dependency("Resource")
+  const ParentResource = Resource.make(() => "parent")
+  const ChildResource = Resource.make(() => "child")
+
+  await new Runtime(ParentResource).run(async () => {
+    expect(await Resource).toBe("parent")
+
+    await new Runtime(ChildResource).run(async () => {
+      expect(await Resource).toBe("child")
+    })
+
+    expect(await Resource).toBe("parent")
+  })
+})
+
+test("Finalizers run in reverse order", async () => {
+  const calls: string[] = []
+
+  await new Runtime().run(async () => {
+    addFinalizer(() => {
+      calls.push("first")
+    })
+    addFinalizer(() => {
+      calls.push("second")
+    })
+    addFinalizer(() => {
+      calls.push("third")
+    })
+  })
+
+  expect(calls).toEqual(["third", "second", "first"])
+})
+
+test("Finalizers keep running after cleanup failure", async () => {
+  const calls: string[] = []
+  const error = new Error("boom")
+
+  await expect(
+    new Runtime().run(async () => {
+      addFinalizer(() => {
+        calls.push("first")
+      })
+      addFinalizer(() => {
+        calls.push("second")
+        throw error
+      })
+      addFinalizer(() => {
+        calls.push("third")
+      })
+    }),
+  ).rejects.toBe(error)
+
+  expect(calls).toEqual(["third", "second", "first"])
+})
+
+test("Program failure wins over cleanup failure", async () => {
+  const cleanupError = new Error("cleanup")
+  const programError = new Error("program")
+
+  await expect(
+    new Runtime().run(async () => {
+      addFinalizer(() => {
+        throw cleanupError
+      })
+
+      throw programError
+    }),
+  ).rejects.toBe(programError)
+})
+
+test("Retry resolution succeeds after later pass progress", async () => {
+  const Database = new Dependency("Database", () => "db")
+  let emailBuilderCalls = 0
+  const emailBuilder = async () => {
+    emailBuilderCalls += 1
+    return `${await Database}-email`
+  }
+  const Email = new Dependency("Email", emailBuilder)
+  let authBuilderCalls = 0
+  const authBuilder = async () => {
+    authBuilderCalls += 1
+    return `${await Email}-auth`
+  }
+  const Auth = new Dependency("Auth", authBuilder)
+
+  const result = await new Runtime(
+    Auth.Default,
+    Email.Default,
+    Database.Default,
+  ).run(async () => Auth)
+
+  expect(result).toBe("db-email-auth")
+  expect(emailBuilderCalls).toBe(2)
+  expect(authBuilderCalls).toBe(3)
+})
+
+test("Missing dependency surfaces MissingImplementationError", async () => {
+  const Missing = new Dependency<string>("Missing")
+  const Service = new Dependency(
+    "Service",
+    async () => `${await Missing}-service`,
+  )
+
+  await expect(
+    new Runtime(Service.Default).run(async () => Service),
+  ).rejects.toMatchObject({
+    dependency: "Missing",
+    name: MissingImplementationError.name,
+  })
+})
+
+test("Dependencies with same name do not collide", async () => {
+  const First = new Dependency("Resource", () => "first")
+  const Second = new Dependency("Resource", () => "second")
+
+  const result = await new Runtime(First.Default, Second.Default).run(
+    async () => {
+      return [await First, await Second]
+    },
+  )
+
+  expect(result).toEqual(["first", "second"])
+})
+
 test(addFinalizer.name, async () => {
-  const finalizer = vi.fn()
+  let finalizerCalls = 0
+  const finalizer = () => {
+    finalizerCalls += 1
+  }
 
   const Resource = new Dependency(
     "Resource",
@@ -111,31 +277,69 @@ test(addFinalizer.name, async () => {
 
   const runtime = new Runtime(Resource.Default)
 
-  await expect(() => runtime.run(() => program(true))).rejects.toThrowError()
-  expect(finalizer).toHaveReturnedTimes(2)
+  await expect(runtime.run(() => program(true))).rejects.toThrowError()
+  expect(finalizerCalls).toBe(2)
 })
 
 test(acquireRelease.name, async () => {
-  const release = vi.fn()
-  const program = async () => acquireRelease(() => "foo", release)
+  const calls: string[] = []
+  let releaseCalls = 0
+  const release = () => {
+    calls.push("release")
+    releaseCalls += 1
+  }
+  const program = async () => {
+    const value = await acquireRelease(() => "foo", release)
+    calls.push("program")
+    return value
+  }
 
   const runtime = new Runtime()
   const result = await runtime.run(program)
   expect(result).toBe("foo")
-  expect(release).toHaveBeenCalledOnce()
+  expect(releaseCalls).toBe(1)
+  expect(calls).toEqual(["program", "release"])
 })
 
 test(acquireUseRelease.name, async () => {
-  const release = vi.fn()
+  const calls: string[] = []
+  let releaseCalls = 0
+  const release = () => {
+    calls.push("release")
+    releaseCalls += 1
+  }
   const program = async () =>
     acquireUseRelease(
       () => "foo",
-      (value) => value.toUpperCase(),
+      (value) => {
+        calls.push("use")
+        return value.toUpperCase()
+      },
       release,
     )
 
   const runtime = new Runtime()
   const result = await runtime.run(program)
   expect(result).toBe("FOO")
-  expect(release).toHaveBeenCalledOnce()
+  expect(releaseCalls).toBe(1)
+  expect(calls).toEqual(["use", "release"])
+})
+
+test("acquireRelease supports returned finalizer functions", async () => {
+  const calls: string[] = []
+
+  const result = await new Runtime().run(async () => {
+    const value = await acquireRelease(
+      () => "foo",
+      () => () => {
+        calls.push("release")
+      },
+    )
+
+    calls.push("program")
+    return value
+  })
+
+  expect(result).toBe("foo")
+  expect(calls).toEqual(["program", "release"])
 })
