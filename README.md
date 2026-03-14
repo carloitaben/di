@@ -90,6 +90,8 @@ export const Drizzle = new Dependency("Drizzle", async () => {
 
 ## Finalizers
 
+Cleanup is deferred until the enclosing `Runtime.run(...)` exits. Finalizers still run if the program throws.
+
 ```ts
 import { Client, createClient } from "@libsql/client"
 import { Dependency, Runtime } from "@/lib/di"
@@ -110,9 +112,63 @@ export const DatabaseTest = Database.make(
 const runtime = new Runtime(DatabaseTest)
 
 await runtime.run(async () => {
+  console.log("using database")
   throw new Error("Oops")
 })
+
+// stdout:
+// using database
+// SQLite client closed
 ```
+
+## Cancellation
+
+Cancellation is runtime-scoped too. Pass an `AbortSignal` at the runtime boundary, then read it anywhere with `signal()`.
+
+```ts
+import { Dependency, Runtime, signal } from "@/lib/di"
+
+type FeatureFlags = {
+  readonly newCheckout: boolean
+  readonly referralBanner: boolean
+}
+
+export const FeatureFlags = new Dependency<FeatureFlags>("FeatureFlags")
+
+export const FeatureFlagsMock = FeatureFlags.make(() => ({
+  newCheckout: true,
+  referralBanner: false,
+}))
+
+export const FeatureFlagsLive = FeatureFlags.make(async () => {
+  const response = await fetch("https://flags.internal.example/api/flags", {
+    signal: signal(),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to load flags: ${response.status}`)
+  }
+
+  return (await response.json()) as FeatureFlags
+})
+
+const controller = new AbortController()
+
+await new Runtime(FeatureFlagsMock).run(async () => {
+  const flags = await FeatureFlags
+  return flags.newCheckout
+})
+
+await new Runtime(FeatureFlagsLive).run(
+  async () => {
+    const flags = await FeatureFlags
+    return flags.newCheckout
+  },
+  { signal: controller.signal },
+)
+```
+
+Nested runtimes inherit the parent signal. If a child runtime also receives a signal, both signals are composed.
 
 ## License
 

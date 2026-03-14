@@ -6,6 +6,8 @@ import {
   acquireRelease,
   acquireUseRelease,
   addFinalizer,
+  signal,
+  throwIfAborted,
 } from "./index"
 
 test("Dependency injection", async () => {
@@ -23,6 +25,10 @@ test("Dependency injection", async () => {
 
   expect(mock).toBe("mock")
   expect(live).toBe("live")
+})
+
+test("signal throws outside a runtime", () => {
+  expect(() => signal()).toThrowError()
 })
 
 test("Default value", async () => {
@@ -143,6 +149,47 @@ test("Nested runtimes can override parent dependencies", async () => {
   })
 })
 
+test("Nested runtimes inherit parent signal", async () => {
+  const controller = new AbortController()
+
+  await new Runtime().run(async () => {
+    const parentSignal = signal()
+    expect(parentSignal).toBe(controller.signal)
+
+    await new Runtime().run(async () => {
+      expect(signal()).toBe(parentSignal)
+    })
+  }, { signal: controller.signal })
+})
+
+test("Nested runtimes compose parent and child signals", async () => {
+  const parentController = new AbortController()
+  const childController = new AbortController()
+
+  await new Runtime().run(async () => {
+    await expect(
+      new Runtime().run(
+        async () => {
+          await new Promise<void>((resolve, reject) => {
+            const abort = () => {
+              try {
+                throwIfAborted()
+                resolve()
+              } catch (error) {
+                reject(error)
+              }
+            }
+
+            signal().addEventListener("abort", abort, { once: true })
+            parentController.abort(new Error("parent-abort"))
+          })
+        },
+        { signal: childController.signal },
+      ),
+    ).rejects.toMatchObject({ message: "parent-abort" })
+  }, { signal: parentController.signal })
+})
+
 test("Finalizers run in reverse order", async () => {
   const calls: string[] = []
 
@@ -198,6 +245,63 @@ test("Program failure wins over cleanup failure", async () => {
   ).rejects.toBe(programError)
 })
 
+test("Abort before resolution stops dependency startup", async () => {
+  const controller = new AbortController()
+  const error = new Error("aborted")
+  let calls = 0
+
+  const Resource = new Dependency("Resource", () => {
+    calls += 1
+    return "value"
+  })
+
+  controller.abort(error)
+
+  await expect(
+    new Runtime(Resource.Default).run(async () => Resource, {
+      signal: controller.signal,
+    }),
+  ).rejects.toBe(error)
+
+  expect(calls).toBe(0)
+})
+
+test("Abort during builder work still runs finalizers", async () => {
+  const controller = new AbortController()
+  const error = new Error("aborted")
+  const calls: string[] = []
+
+  const Resource = new Dependency("Resource", async () => {
+    addFinalizer(() => {
+      calls.push("finalizer")
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => {
+        try {
+          throwIfAborted()
+          resolve()
+        } catch (cause) {
+          reject(cause)
+        }
+      }
+
+      signal().addEventListener("abort", abort, { once: true })
+      controller.abort(error)
+    })
+
+    return "value"
+  })
+
+  await expect(
+    new Runtime(Resource.Default).run(async () => Resource, {
+      signal: controller.signal,
+    }),
+  ).rejects.toBe(error)
+
+  expect(calls).toEqual(["finalizer"])
+})
+
 test("Retry resolution succeeds after later pass progress", async () => {
   const Database = new Dependency("Database", () => "db")
   let emailBuilderCalls = 0
@@ -222,6 +326,26 @@ test("Retry resolution succeeds after later pass progress", async () => {
   expect(result).toBe("db-email-auth")
   expect(emailBuilderCalls).toBe(2)
   expect(authBuilderCalls).toBe(3)
+})
+
+test("Abort stops dependency retry loop", async () => {
+  const controller = new AbortController()
+  const error = new Error("aborted")
+  let calls = 0
+  const Missing = new Dependency<string>("Missing")
+  const Blocked = new Dependency("Blocked", async () => {
+    calls += 1
+    controller.abort(error)
+    return Missing
+  })
+
+  await expect(
+    new Runtime(Blocked.Default).run(async () => Blocked, {
+      signal: controller.signal,
+    }),
+  ).rejects.toBe(error)
+
+  expect(calls).toBe(1)
 })
 
 test("Missing dependency surfaces MissingImplementationError", async () => {

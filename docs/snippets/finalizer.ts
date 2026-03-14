@@ -8,18 +8,18 @@ export const DatabaseTest = Database.make(
     createClient({
       url: "file:sqlite.db",
     }),
-  // Close the client after the runnable finishes
   (client) => {
     client.close()
     console.log("SQLite client closed")
   },
 )
 
-// ...
-
-async function program() {
-  throw Error("Oops")
-}
-
 const runtime = new Runtime(DatabaseTest)
-await runtime.run(program) // stdout: SQLite client closed
+await runtime.run(async () => {
+  console.log("using database")
+  throw Error("Oops")
+})
+
+// stdout:
+// using database
+// SQLite client closed

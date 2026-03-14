@@ -4,7 +4,12 @@ type FinalizerFunction = () => void | Promise<void>
 
 type RuntimeStorage = {
   finalizers: FinalizerFunction[]
+  signal: AbortSignal
   parent?: RuntimeStorage
+}
+
+type RunOptions = {
+  signal?: AbortSignal
 }
 
 class ResourceKey<T> {
@@ -35,6 +40,8 @@ const storage = new AsyncLocalStorage<RuntimeStorage>({
   name: "RuntimeStorage",
 })
 
+const defaultAbortSignal = new AbortController().signal
+
 export class RuntimeError extends Error {
   constructor() {
     super()
@@ -50,9 +57,24 @@ function getStoreOrThrow() {
   return value
 }
 
-function createStore(current?: RuntimeStorage): RuntimeStorage {
+function composeSignal(
+  parent: AbortSignal | undefined,
+  current: AbortSignal | undefined,
+): AbortSignal {
+  if (parent && current) {
+    return AbortSignal.any([parent, current])
+  }
+
+  return current ?? parent ?? defaultAbortSignal
+}
+
+function createStore(
+  current: RuntimeStorage | undefined,
+  options?: RunOptions,
+): RuntimeStorage {
   return {
     finalizers: [],
+    signal: composeSignal(current?.signal, options?.signal),
     parent: current,
   }
 }
@@ -75,6 +97,14 @@ export class MissingImplementationError extends Error {
 export function addFinalizer(finalizer: FinalizerFunction) {
   const store = getStoreOrThrow()
   store.finalizers.push(finalizer)
+}
+
+export function signal() {
+  return getStoreOrThrow().signal
+}
+
+export function throwIfAborted() {
+  signal().throwIfAborted()
 }
 
 type ReleaseHandler<T> = (
@@ -184,6 +214,7 @@ async function resolveDependency(
   dependency: DependencyBuilder<unknown>,
 ): Promise<DependencyResolution> {
   try {
+    throwIfAborted()
     await dependency()
     return { kind: "built" }
   } catch (error) {
@@ -203,7 +234,11 @@ async function resolveDependencies(dependencies: DependencyBuilder<unknown>[]) {
   let pending = dependencies
 
   while (pending.length) {
+    throwIfAborted()
+
     const settled = await Promise.all(pending.map(resolveDependency))
+    throwIfAborted()
+
     const blocked: DependencyBuilder<unknown>[] = []
     let missing: MissingImplementationError | undefined
 
@@ -249,15 +284,19 @@ export class Runtime {
     this.dependencies = dependencies
   }
 
-  public run = async <Result>(program: () => Promise<Result>) => {
+  public run = async <Result>(
+    program: () => Promise<Result>,
+    options?: RunOptions,
+  ) => {
     const current = storage.getStore()
-    const store = createStore(current)
+    const store = createStore(current, options)
 
     return storage.run(store, async () => {
       let outcome: { ok: true; value: Result } | { ok: false; error: unknown }
 
       try {
         await resolveDependencies(this.dependencies)
+        throwIfAborted()
         outcome = { ok: true, value: await program() }
       } catch (error) {
         outcome = { ok: false, error }
