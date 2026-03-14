@@ -8,7 +8,7 @@ import {
   addFinalizer,
   signal,
   throwIfAborted,
-} from "./index"
+} from "./di"
 
 test("Dependency injection", async () => {
   const Resource = new Dependency<string>("Resource")
@@ -152,42 +152,48 @@ test("Nested runtimes can override parent dependencies", async () => {
 test("Nested runtimes inherit parent signal", async () => {
   const controller = new AbortController()
 
-  await new Runtime().run(async () => {
-    const parentSignal = signal()
-    expect(parentSignal).toBe(controller.signal)
+  await new Runtime().run(
+    async () => {
+      const parentSignal = signal()
+      expect(parentSignal).toBe(controller.signal)
 
-    await new Runtime().run(async () => {
-      expect(signal()).toBe(parentSignal)
-    })
-  }, { signal: controller.signal })
+      await new Runtime().run(async () => {
+        expect(signal()).toBe(parentSignal)
+      })
+    },
+    { signal: controller.signal },
+  )
 })
 
 test("Nested runtimes compose parent and child signals", async () => {
   const parentController = new AbortController()
   const childController = new AbortController()
 
-  await new Runtime().run(async () => {
-    await expect(
-      new Runtime().run(
-        async () => {
-          await new Promise<void>((resolve, reject) => {
-            const abort = () => {
-              try {
-                throwIfAborted()
-                resolve()
-              } catch (error) {
-                reject(error)
+  await new Runtime().run(
+    async () => {
+      await expect(
+        new Runtime().run(
+          async () => {
+            await new Promise<void>((resolve, reject) => {
+              const abort = () => {
+                try {
+                  throwIfAborted()
+                  resolve()
+                } catch (error) {
+                  reject(error)
+                }
               }
-            }
 
-            signal().addEventListener("abort", abort, { once: true })
-            parentController.abort(new Error("parent-abort"))
-          })
-        },
-        { signal: childController.signal },
-      ),
-    ).rejects.toMatchObject({ message: "parent-abort" })
-  }, { signal: parentController.signal })
+              signal().addEventListener("abort", abort, { once: true })
+              parentController.abort(new Error("parent-abort"))
+            })
+          },
+          { signal: childController.signal },
+        ),
+      ).rejects.toMatchObject({ message: "parent-abort" })
+    },
+    { signal: parentController.signal },
+  )
 })
 
 test("Finalizers run in reverse order", async () => {

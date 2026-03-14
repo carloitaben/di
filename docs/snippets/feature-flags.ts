@@ -1,4 +1,4 @@
-import { Dependency, Runtime, signal } from "@/index"
+import { Dependency, Runtime, signal } from "@/lib/di"
 
 type FeatureFlags = {
   readonly newCheckout: boolean
@@ -16,10 +16,6 @@ export const FeatureFlagsLive = FeatureFlags.make(async () => {
   const response = await fetch("https://flags.internal.example/api/flags", {
     signal: signal(),
   })
-
-  if (!response.ok) {
-    throw new Error(`Failed to load flags: ${response.status}`)
-  }
 
   return (await response.json()) as FeatureFlags
 })

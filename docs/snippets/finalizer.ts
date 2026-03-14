@@ -1,9 +1,8 @@
 import { type Client, createClient } from "@libsql/client"
-import { Dependency, Runtime } from "@/index"
+import { Dependency, Runtime } from "@/lib/di"
 
-export const Database = new Dependency<Client>("Database")
-
-export const DatabaseTest = Database.make(
+export const Database = new Dependency<Client>(
+  "Database",
   () =>
     createClient({
       url: "file:sqlite.db",
@@ -14,12 +13,12 @@ export const DatabaseTest = Database.make(
   },
 )
 
-const runtime = new Runtime(DatabaseTest)
+const runtime = new Runtime(Database.Default)
 await runtime.run(async () => {
-  console.log("using database")
+  console.log("Using database")
   throw Error("Oops")
 })
 
 // stdout:
-// using database
+// Using database
 // SQLite client closed

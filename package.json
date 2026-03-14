@@ -8,13 +8,16 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "bun test ./src/"
+    "docs": "bun run size && automd",
+    "size": "bun run scripts/measure-bundle-size.ts",
+    "test": "bun test"
   },
   "prettier": {
     "semi": false
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "automd": "^0.4.3",
     "typescript": "^5.8.3"
   },
   "packageManager": "bun@1.3.8"

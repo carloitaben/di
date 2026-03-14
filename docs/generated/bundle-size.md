@@ -1,0 +1,1 @@
+![min: 2.5 kB](https://img.shields.io/badge/min-2.5%20kB-0a7ea4?style=flat-square) ![gz: 1.1 kB](https://img.shields.io/badge/gz-1.1%20kB-1f9d55?style=flat-square) ![br: 1003 B](https://img.shields.io/badge/br-1003%20B-b85c00?style=flat-square)
