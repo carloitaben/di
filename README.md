@@ -230,8 +230,7 @@ await new Runtime(FeatureFlagsLive).run(program, {
 
 <!-- /automd -->
 
-> [!TIP]
-> Nested runtimes inherit the parent signal. If a child runtime also receives a signal, both signals are composed.
+Nested runtimes inherit the parent signal. If a child runtime also receives a signal, both signals are composed.
 
 ## License
 
