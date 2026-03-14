@@ -10,7 +10,7 @@ Small typed dependency injection built on [thenables](https://developer.mozilla.
 
 ## Installation
 
-Copy [`src/di.ts`](/src/di.ts) into your app. Optionally, you may also copy [`src/di.test.ts`](/src/di.test.ts).
+Copy [`src/di.ts`](/src/di.ts) into your project. Optionally, you may also copy [`src/di.test.ts`](/src/di.test.ts).
 
 ## Getting started
 
