@@ -100,22 +100,13 @@ Pass an async function to build one dependency from another.
 <!-- automd:file src="docs/snippets/derived.ts" code lang="ts" name="" -->
 
 ```ts
-import { type Client, createClient } from "@libsql/client"
+import { createClient } from "@libsql/client"
 import { drizzle } from "drizzle-orm/libsql"
 import { Dependency } from "@/lib/di"
 
-export const Database = new Dependency<Client>("Database")
-
-export const DatabaseTest = Database.make(() =>
+export const Database = new Dependency("Database", () =>
   createClient({
     url: "file:sqlite.db",
-  }),
-)
-
-export const DatabaseLive = Database.make(() =>
-  createClient({
-    url: process.env["DATABASE_URL"],
-    authToken: process.env["DATABASE_AUTH_TOKEN"],
   }),
 )
 
@@ -134,10 +125,10 @@ Use finalizers for resources like database clients, sockets, or file handles. Fi
 <!-- automd:file src="docs/snippets/finalizer.ts" code lang="ts" name="" -->
 
 ```ts
-import { type Client, createClient } from "@libsql/client"
+import { createClient } from "@libsql/client"
 import { Dependency, Runtime } from "@/lib/di"
 
-export const Database = new Dependency<Client>(
+export const Database = new Dependency(
   "Database",
   () =>
     createClient({

@@ -1,7 +1,7 @@
-import { type Client, createClient } from "@libsql/client"
+import { createClient } from "@libsql/client"
 import { Dependency, Runtime } from "@/lib/di"
 
-export const Database = new Dependency<Client>(
+export const Database = new Dependency(
   "Database",
   () =>
     createClient({

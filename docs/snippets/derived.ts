@@ -1,19 +1,10 @@
-import { type Client, createClient } from "@libsql/client"
+import { createClient } from "@libsql/client"
 import { drizzle } from "drizzle-orm/libsql"
 import { Dependency } from "@/lib/di"
 
-export const Database = new Dependency<Client>("Database")
-
-export const DatabaseTest = Database.make(() =>
+export const Database = new Dependency("Database", () =>
   createClient({
     url: "file:sqlite.db",
-  }),
-)
-
-export const DatabaseLive = Database.make(() =>
-  createClient({
-    url: process.env["DATABASE_URL"],
-    authToken: process.env["DATABASE_AUTH_TOKEN"],
   }),
 )
 
